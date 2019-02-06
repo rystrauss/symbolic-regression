@@ -1,1 +1,1 @@
-# symbolic-regression
+# Symbolic Regression
