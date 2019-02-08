@@ -22,6 +22,7 @@ class _Program:
                  function_set,
                  max_depth,
                  const_range,
+                 int_consts,
                  num_features,
                  init_method,
                  program=None):
@@ -32,6 +33,7 @@ class _Program:
             max_depth (int): The maximum allowed depth for the tree when the initialization
             method is 'grow'. When the initialization method is 'full', this will be the height of the tree.
             const_range (tuple of two ints): The range of constants to include in the formulas.
+            int_consts (bool): If true, constants will only be integers in const_range.
             num_features (int): The number of features.
             init_method (str):
                 - 'grow': Nodes are chosen at random from both functions and terminals, allowing
@@ -56,9 +58,10 @@ class _Program:
         self.function_set = function_set
         self.max_depth = max_depth
         self.const_range = const_range
+        self.int_consts = int_consts
         self.num_features = num_features
         self.init_method = init_method
-        self.program = program
+        self.program = program or self.generate_random_program(self.max_depth)
 
     def generate_random_program(self, depth):
         """Recursivley generates a random program.
@@ -83,19 +86,29 @@ class _Program:
         term_size = self.num_features + 1
         func_size = len(self.function_set)
         # Determine if a function or terminal should be added
-        if self.max_depth == 0 or (
+        if depth == 0 or (
                 self.init_method == 'grow' and np.random.rand() < term_size / (term_size + func_size)):
             # We need to select a terminal
             terminal = np.random.randint(term_size)
             # Potentially select a constant as the terminal
             if terminal == self.num_features:
                 terminal = np.random.uniform(*self.const_range)
+                if self.int_consts:
+                    terminal = np.round(terminal)
             program = terminal
         else:
             # We need to select a function
             function = np.random.choice(self.function_set)
-            # Recursivley generated function arguments
+            # Recursivley generate function arguments
             arguments = [self.generate_random_program(depth - 1) for _ in range(function.arity)]
-            program = (function, *arguments)
+            program = [function, *arguments]
 
         return program
+
+    def subtree_mutation(self):
+        depth = np.random.randint(self.max_depth // 2, self.max_depth)
+        cur = self.program
+        for _ in range(depth):
+            # See if we've reached a terminal
+            if not isinstance(property, tuple):
+                new_subtree = self.generate_random_program(self.max_depth - depth)
