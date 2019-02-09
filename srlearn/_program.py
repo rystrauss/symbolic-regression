@@ -7,6 +7,8 @@ Author: Ryan Strauss
 Author: Sarah Hancock
 """
 
+from copy import deepcopy
+
 import numpy as np
 
 from .function import Function
@@ -66,6 +68,14 @@ class _Program:
         if not isinstance(self.program, list):
             raise ValueError('program must be a list.')
 
+        arities = {}
+        for function in self.function_set:
+            if function.arity not in arities:
+                arities[function.arity] = []
+            arities[function.arity].append(function)
+
+        self.arities = arities
+
     def __str__(self):
         """Returns a prefix notation string representation of the program."""
         output = ''
@@ -88,6 +98,25 @@ class _Program:
                     output += ', '
 
         return output
+
+    def __len__(self):
+        """Defines the length of a program to be the number of nodes in the program."""
+        return len(self.program)
+
+    def depth(self):
+        """Calculates the depth of the program."""
+        terminals = [0]
+        depth = 1
+        for node in self.program:
+            if isinstance(node, Function):
+                terminals.append(node.arity)
+                depth = max(len(terminals), depth)
+            else:
+                terminals[-1] -= 1
+                while terminals[-1] == 0:
+                    terminals.pop()
+                    terminals[-1] -= 1
+        return depth - 1
 
     def generate_random_program(self, max_depth=None):
         """Generates a random program.
@@ -185,6 +214,41 @@ class _Program:
                     # In this case, we are done and can return the result
                     return result
 
+    def clone(self):
+        """Clones the program.
+
+        Returns:
+            A deep copy of the program.
+        """
+        return deepcopy(self)
+
+    def subtree_crossover(self, donor):
+        """Performs subtree crossover on the program.
+
+        Given two parents, subtree crossover randomly selects a crossover point in each parent tree.
+        Then, it creates the offspring by replacing the sub-tree rooted at the crossover point in a copy
+        of the first parent with a copy of the sub-tree rooted at the crossover point in the second parent.
+
+        Args:
+            donor (_Program): The donor program.
+
+        Returns:
+            The offspring that resulted from the crossover.
+        """
+        if not isinstance(donor, _Program):
+            raise ValueError('donor must be a _Program.')
+
+        # Get a subtree to donate
+        donor_start, donor_end = _get_random_subtree(donor.program)
+        # Produce offspring
+        offspring = self.clone()
+        # Get a subtree of the offspring to replace
+        start, end = _get_random_subtree(offspring.program)
+        # Insert genetic material from the donor into the offspring
+        offspring.program = offspring.program[:start] + donor.program[donor_start:donor_end] + offspring.program[end:]
+
+        return offspring
+
     def subtree_mutation(self):
         """Performs a subtree mutation on the program.
 
@@ -197,9 +261,75 @@ class _Program:
         tutorial, with a survey of techniques and applications,” Stud. Comput. Intell., vol. 115, pp. 927–1028, 2008.
 
         Returns:
-            None
+            The mutated program.
         """
-        raise NotImplementedError
+        # Build a new naive program
+        chicken = self.clone()
+        chicken.program = self.generate_random_program()
+        # Do subtree mutation via the headless chicken method
+        return self.subtree_crossover(chicken)
+
+    def point_mutation(self, point_probability):
+        """Performs point mutation on the program.
+
+        In point mutation a random node is selected and the primitive stored there is replaced with a different
+        random primitive of the same arity taken from the primitive set. If no other primitives with that arity
+        exist, nothing happens to that node (but other nodes may still be mutated). Note that, when subtree mutation
+        is applied, this involves the modification of exactly one subtree. Point mutation, on the other hand, is
+        typically applied with a given mutation rate on a per-node basis, allowing multiple nodes to be mutated
+        independently.
+
+        W. B. Langdon, R. Poli, N. F. McPhee, and J. R. Koza, “Genetic programming: An introduction and
+        tutorial, with a survey of techniques and applications,” Stud. Comput. Intell., vol. 115, pp. 927–1028, 2008.
+
+        Args:
+            point_probability (float): The probability of a single node being mutated.
+
+        Returns:
+            The mutated program.
+        """
+        mutated = self.clone()
+        # Determine which nodes to mutate
+        indices = np.where(
+            [True if np.random.rand() < point_probability else False for _ in range(len(mutated.program))])
+
+        for i in indices:
+            node = mutated.program[i]
+            if isinstance(node, Function):
+                # If node is a function, replace it with a random function of equal arity
+                # Note that there is a chance the same function is randomly selected as a replacement
+                mutated.program[i] = np.random.choice(mutated.arities[node.arity])
+            else:
+                # We need to select either a variable or constant
+                terminal = np.random.randint(mutated.num_features + 1)
+                if terminal == mutated.num_features:
+                    terminal = np.random.uniform(*self.const_range)
+                mutated.program[i] = terminal
+
+        return mutated
+
+    def hoist_mutation(self):
+        """Performs Hoist mutation on the program.
+
+        In Hoist mutation the new subtree is selected from the subtree being removed from the parent,
+        guaranteeing that the new program will be smaller than its parent. Hoist mutation is a method
+        for controlling bloat.
+
+        [1] W. B. Langdon, R. Poli, N. F. McPhee, and J. R. Koza, “Genetic programming: An introduction and
+        tutorial, with a survey of techniques and applications,” Stud. Comput. Intell., vol. 115, pp. 927–1028, 2008.
+        [2] K. E. Kinnear, “Generality and difficulty in genetic programming: Evolving a sort,” Proc. 5th Int. Conf.
+        Genet. Algorithms (ICGA ’93), pp. 287–294, 1993.
+
+        Returns:
+            The mutated program.
+        """
+        mutated = self.clone()
+
+        start, end = _get_random_subtree(mutated.program)
+        sub_start, sub_end = _get_random_subtree(mutated.program[start:end])
+        mutated.program = mutated.program[:start] + mutated.program[sub_start:sub_end] + mutated.program[:end]
+
+        return mutated
 
 
 def _get_random_subtree(program):
@@ -219,7 +349,7 @@ def _get_random_subtree(program):
     https://github.com/trevorstephens/gplearn
 
     Args:
-        program: The explicit list representation of the program to get a subtree
+        program (list): The explicit list representation of the program to get a subtree
         from.
 
     Returns:
@@ -237,8 +367,7 @@ def _get_random_subtree(program):
     while stack > end - start:
         node = program[end]
         if isinstance(node, Function):
-            # If we are at a function, we need to encapsulate
-            # its children
+            # If we are at a function, we need to encapsulate its children
             stack += node.arity
         # Push back the endpoint
         end += 1
