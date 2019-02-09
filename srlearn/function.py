@@ -21,33 +21,19 @@ class Function:
 
 
 def _protected_division(x1, x2):
-    if np.abs(x2) < 0.001:
-        return 1.
-    return np.divide(x1, x2)
+    return np.where(np.abs(x2) > 0.001, np.divide(x1, x2), 1.)
 
 
 def _protected_exp(x):
-    y = np.exp(x)
-    if y > 10e10:
-        return 10e10
-    if y < 10e-10:
-        return 10e-10
-    return y
+    return np.clip(np.exp(x), a_min=10e-10, a_max=10e10)
 
 
 def _protected_log(x):
-    if x == 0:
-        return 0
-    return np.log(np.abs(x))  # TODO: Come back to this
+    return np.where(x != 0, np.log(np.abs(x)), 0.)  # TODO: Come back to this
 
 
 def _protected_tan(x):
-    y = np.exp(x)
-    if y > 10e10:
-        return 10e10
-    if y < -10e10:
-        return -10e10
-    return y
+    return np.clip(np.tan(x), a_min=-10e10, a_max=10e10)
 
 
 add = Function(np.add, 'add', 2)

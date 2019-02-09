@@ -61,75 +61,114 @@ class _Program:
         self.int_consts = int_consts
         self.num_features = num_features
         self.init_method = init_method
-        self.program = program or self.generate_random_program(self.max_depth)
+        self.program = program or self.generate_random_program()
 
         if not isinstance(self.program, list):
             raise ValueError('program must be a list.')
 
     def __str__(self):
-        return self._stringify_subtree(self.program)
+        output = ''
+        terminals = [0]
+        for i, node in enumerate(self.program):
+            if isinstance(node, Function):
+                output += node.name + '('
+                terminals.append(node.arity)
+            else:
+                if isinstance(node, np.int):
+                    output += 'X{}'.format(node)
+                else:
+                    output += '{0:.3f}'.format(node)
+                terminals[-1] -= 1
+                while terminals[-1] == 0:
+                    terminals.pop()
+                    terminals[-1] -= 1
+                    output += ')'
+                if i != len(self.program) - 1:
+                    output += ', '
 
-    def _stringify_subtree(self, program):
-        if not isinstance(program, list):
-            return str(program)
-        arguments = [self._stringify_subtree(argument) for argument in program[1:]]
-        return '{}({})'.format(program[0].name, ', '.join(arguments))
+        return output
 
-    def generate_random_program(self, depth):
-        """Recursivley generates a random program.
+    def generate_random_program(self):
+        """Generates a random program.
 
         Builds a random tree using either the 'full' or 'grow' method, as specified in
         `self.init_method`. These two techniques are described in [1] and this implementation
-        follows the presentation of the algorithm in [2].
+        is adapted from the presentation of the algorithm in [2].
 
         [1] J. R. Koza, Genetic programming: on the programming of computers by means of natural selection. 1992.
         [2] W. B. Langdon, R. Poli, N. F. McPhee, and J. R. Koza, “Genetic programming: An introduction and tutorial,
         with a survey of techniques and applications,” Stud. Comput. Intell., vol. 115, pp. 927–1028, 2008.
 
-        Args:
-            depth (int): The maximum depth of the tree to be created.
-
         Returns:
-            The prefix notation representation of the generated tree as a list.
+            The explicit prefix notation representation of the generated tree as a list.
         """
-        if depth > self.max_depth:
-            raise ValueError('depth cannot be larger than the maximum depth.')
+        # Start program with a function
+        function = np.random.choice(self.function_set)
+        program = [function]
+        terminal_stack = [function.arity]
 
-        term_size = self.num_features + 1
-        func_size = len(self.function_set)
-        # Determine if a function or terminal should be added
-        if depth != self.max_depth and (depth == 0 or (
-                self.init_method == 'grow' and np.random.rand() < term_size / (term_size + func_size))):
-            # We need to select a terminal
-            terminal = np.random.randint(term_size)
-            # Potentially select a constant as the terminal
-            if terminal == self.num_features:
-                terminal = np.random.uniform(*self.const_range)
-                if self.int_consts:
-                    terminal = np.round(terminal)
-            program = terminal
-        else:
-            # We need to select a function
-            function = np.random.choice(self.function_set)
-            # Recursivley generate function arguments
-            arguments = [self.generate_random_program(depth - 1) for _ in range(function.arity)]
-            program = [function, *arguments]
+        while terminal_stack:
+            depth = len(terminal_stack)
+            terminal_prob = (self.num_features + 1) / (len(self.function_set) + self.num_features + 1)
+            if depth == self.max_depth or (self.init_method == 'grow' and np.random.rand() <= terminal_prob):
+                # We need a terminal
+                terminal = np.random.randint(self.num_features + 1)
+                # Potentially select a constant as the terminal
+                if terminal == self.num_features:
+                    terminal = np.random.uniform(*self.const_range)
+                    if self.int_consts:
+                        terminal = np.round(terminal)
+                program.append(terminal)
+                terminal_stack[-1] -= 1
+                while terminal_stack[-1] == 0:
+                    terminal_stack.pop()
+                    if not terminal_stack:
+                        return program
+                    terminal_stack[-1] -= 1
+            else:
+                # We need a function
+                function = np.random.choice(self.function_set)
+                program.append(function)
+                terminal_stack.append(function.arity)
 
-        return program
+    def predict(self, X):
+        if X.ndim != 2 or X.shape[1] != self.num_features:
+            raise ValueError(
+                'X should have shape (num_examples, {}), but got shape {}.'.format(self.num_features, X.shape))
 
-    def _get_random_subtree(self, program, depth):
-        """Recursivley traverses the tree to get a random subtree."""
-        if not isinstance(program, list):
-            raise ValueError('program must be a list.')
-
-        # Randomly choose a path to follow
-        child = np.random.randint(1, program[0].arity + 1)
-        if not isinstance(program[child], list) or depth == 0:
-            # If we have found a terminal or reached stopping depth, we end
-            return program, child, depth
-
-        # Recurse to the next level of the tree
-        return self._get_random_subtree(program[child], depth - 1)
+        evaluation_stack = []
+        for node in self.program:
+            if isinstance(node, Function):
+                # If node is a function, push a new list onto the evaluation stack
+                evaluation_stack.append([node])
+            else:
+                # If node is a terminal, append it to its corresponding function's list
+                evaluation_stack[-1].append(node)
+            # Check for functions that are ready to be evaluated
+            while len(evaluation_stack[-1]) == evaluation_stack[-1][0].arity + 1:
+                function = evaluation_stack[-1][0]
+                terminals = []
+                for t in evaluation_stack[-1][1:]:
+                    if isinstance(t, np.float):
+                        # Terminal is a constant
+                        terminals.append(np.full(X.shape[0], t, dtype=np.float))
+                    elif isinstance(t, np.int):
+                        # Terminal is a variable:
+                        terminals.append(X[:, t])
+                    else:
+                        # Terminal is a numpy array containing a previously computed result
+                        terminals.append(t)
+                # Evaluate the function
+                result = function(*terminals)
+                # Check to see if we have returned to the root
+                if len(evaluation_stack) != 1:
+                    # If not, pop the now completed function and add the result
+                    # as an argument for the next function
+                    evaluation_stack.pop()
+                    evaluation_stack[-1].append(result)
+                else:
+                    # In this case, we are done and can return the result
+                    return result
 
     def get_random_subtree(self, depth=None):
         """Recursivley traversed the tree to get a random subtree.
@@ -146,9 +185,7 @@ class _Program:
             the second element is the index of the selected subtree in its parent, and the
             third element is the depth at which the subtree is located.
         """
-        depth = depth or np.random.randint(self.max_depth + 1)
-        subtree_parent, subtree_index, stop_depth = self._get_random_subtree(self.program, depth)
-        return subtree_parent, subtree_index, depth - stop_depth
+        raise NotImplementedError
 
     def subtree_mutation(self):
         """Performs a subtree mutation on the program.
@@ -164,7 +201,4 @@ class _Program:
         Returns:
             None
         """
-        # Pressure the mutation to occur in the bottom half of the tree
-        depth = np.random.randint(self.max_depth // 2, self.max_depth + 1)
-        subtree_parent, subtree_index, subtree_depth = self.get_random_subtree(depth)
-        subtree_parent[subtree_index] = self.generate_random_program(self.max_depth - subtree_depth - 1)
+        raise NotImplementedError
