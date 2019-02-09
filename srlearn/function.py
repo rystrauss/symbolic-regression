@@ -21,7 +21,8 @@ class Function:
 
 
 def _protected_division(x1, x2):
-    return np.where(np.abs(x2) > 0.001, np.divide(x1, x2), 1.)
+    with np.errstate(divide='ignore', invalid='ignore'):
+        return np.where(np.abs(x2) > 0.001, np.divide(x1, x2), 1.)
 
 
 def _protected_exp(x):
@@ -29,11 +30,16 @@ def _protected_exp(x):
 
 
 def _protected_log(x):
-    return np.where(x != 0, np.log(np.abs(x)), 0.)  # TODO: Come back to this
+    with np.errstate(divide='ignore', invalid='ignore'):
+        return np.where(x != 0, np.log(np.abs(x)), 0.)
 
 
 def _protected_tan(x):
     return np.clip(np.tan(x), a_min=-10e10, a_max=10e10)
+
+
+def _protected_sqrt(x):
+    return np.sqrt(np.abs(x))
 
 
 add = Function(np.add, 'add', 2)
@@ -45,4 +51,4 @@ log = Function(_protected_log, 'log', 1)
 sin = Function(np.sin, 'sin', 1)
 cos = Function(np.cos, 'cos', 1)
 tan = Function(_protected_tan, 'tan', 1)
-# TODO: Add sqrt
+sqrt = Function(_protected_sqrt, 'sqrt', 1)
