@@ -67,6 +67,7 @@ class _Program:
             raise ValueError('program must be a list.')
 
     def __str__(self):
+        """Returns a prefix notation string representation of the program."""
         output = ''
         terminals = [0]
         for i, node in enumerate(self.program):
@@ -88,7 +89,7 @@ class _Program:
 
         return output
 
-    def generate_random_program(self):
+    def generate_random_program(self, max_depth=None):
         """Generates a random program.
 
         Builds a random tree using either the 'full' or 'grow' method, as specified in
@@ -99,6 +100,10 @@ class _Program:
         [2] W. B. Langdon, R. Poli, N. F. McPhee, and J. R. Koza, “Genetic programming: An introduction and tutorial,
         with a survey of techniques and applications,” Stud. Comput. Intell., vol. 115, pp. 927–1028, 2008.
 
+        Args:
+            max_depth (int, optional): The maximum depth of the generated program. Defaults to None,
+            in which case the max depth of this program object is used.
+
         Returns:
             The explicit prefix notation representation of the generated tree as a list.
         """
@@ -107,10 +112,12 @@ class _Program:
         program = [function]
         terminal_stack = [function.arity]
 
+        max_depth = max_depth or self.max_depth
+
         while terminal_stack:
             depth = len(terminal_stack)
             terminal_prob = (self.num_features + 1) / (len(self.function_set) + self.num_features + 1)
-            if depth == self.max_depth or (self.init_method == 'grow' and np.random.rand() <= terminal_prob):
+            if depth == max_depth or (self.init_method == 'grow' and np.random.rand() <= terminal_prob):
                 # We need a terminal
                 terminal = np.random.randint(self.num_features + 1)
                 # Potentially select a constant as the terminal
@@ -132,6 +139,14 @@ class _Program:
                 terminal_stack.append(function.arity)
 
     def predict(self, X):
+        """Makes predictions for the provided examples using the current program.
+
+        Args:
+            X (ndarray): A numpy array of the shape (num_examples, num_features).
+
+        Returns:
+            The predicted values as a numpy array of the shape (num_examples,).
+        """
         if X.ndim != 2 or X.shape[1] != self.num_features:
             raise ValueError(
                 'X should have shape (num_examples, {}), but got shape {}.'.format(self.num_features, X.shape))
@@ -170,23 +185,6 @@ class _Program:
                     # In this case, we are done and can return the result
                     return result
 
-    def get_random_subtree(self, depth=None):
-        """Recursivley traversed the tree to get a random subtree.
-
-        This function stops at the parent of the selected subtree, so the subtree can be swapped out
-        and references work as needed.
-
-        Args:
-            depth (int, optional): The maximal depth at which to pick a subtree. If None, the depth
-            is randomly selected.
-
-        Returns:
-            A tuple where the first element is the parent of the selected subtree,
-            the second element is the index of the selected subtree in its parent, and the
-            third element is the depth at which the subtree is located.
-        """
-        raise NotImplementedError
-
     def subtree_mutation(self):
         """Performs a subtree mutation on the program.
 
@@ -202,3 +200,47 @@ class _Program:
             None
         """
         raise NotImplementedError
+
+
+def _get_random_subtree(program):
+    """Get a random subtree from the program.
+
+    This method uses a technique suggested by Koza, where there is a 90%
+    chance of a function getting selected and a 10% change of a terminal getting
+    selected. On the other hand, if uniform selection of crossover points was used,
+    crossover operations would frequently exchange only very small amounts of genetic
+    material (that is, small subtrees); many crossovers may in fact reduce to simply
+    swapping two leaves.
+
+    W. B. Langdon, R. Poli, N. F. McPhee, and J. R. Koza, “Genetic programming: An introduction and
+    tutorial, with a survey of techniques and applications,” Stud. Comput. Intell., vol. 115, pp. 927–1028, 2008.
+
+    This implementation is adapted from gplearn:
+    https://github.com/trevorstephens/gplearn
+
+    Args:
+        program: The explicit list representation of the program to get a subtree
+        from.
+
+    Returns:
+        The tuple (start, end) representing the indices that mark the subtree. The
+        endpoint is not inclusive.
+    """
+    probs = np.array([0.9 if isinstance(node, Function) else 0.1 for node in program])
+    probs = np.cumsum(probs / probs.sum())
+    start = np.searchsorted(probs, np.random.uniform())
+
+    # Keep track of the number of arguments we need to encapsulate
+    stack = 1
+    end = start
+    # Check if we are encapsulated everything we need to
+    while stack > end - start:
+        node = program[end]
+        if isinstance(node, Function):
+            # If we are at a function, we need to encapsulate
+            # its children
+            stack += node.arity
+        # Push back the endpoint
+        end += 1
+
+    return start, end
