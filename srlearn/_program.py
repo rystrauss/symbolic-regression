@@ -3,6 +3,9 @@
 A program represents one individual in the population and uses prefix notation to
 represent an expression tree.
 
+Parts of this implementation are adapted from gplearn:
+https://github.com/trevorstephens/gplearn
+
 Author: Ryan Strauss
 Author: Sarah Hancock
 """
@@ -145,6 +148,8 @@ class _Program:
 
         while terminal_stack:
             depth = len(terminal_stack)
+            # We consider `rand` to be a single terminal, so the size of our terminal set
+            # is the number of features plus one
             terminal_prob = (self.num_features + 1) / (len(self.function_set) + self.num_features + 1)
             if depth == max_depth or (self.init_method == 'grow' and np.random.rand() <= terminal_prob):
                 # We need a terminal
@@ -344,9 +349,6 @@ def _get_random_subtree(program):
 
     W. B. Langdon, R. Poli, N. F. McPhee, and J. R. Koza, “Genetic programming: An introduction and
     tutorial, with a survey of techniques and applications,” Stud. Comput. Intell., vol. 115, pp. 927–1028, 2008.
-
-    This implementation is adapted from gplearn:
-    https://github.com/trevorstephens/gplearn
 
     Args:
         program (list): The explicit list representation of the program to get a subtree

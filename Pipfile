@@ -7,6 +7,9 @@ verify_ssl = true
 
 [packages]
 numpy = "*"
+pandas = "*"
+matplotlib = "*"
+jupyter = "*"
 
 [requires]
 python_version = "3.7"
