@@ -43,7 +43,7 @@ class _Program:
             init_method (str):
                 - 'grow': Nodes are chosen at random from both functions and terminals, allowing
                           for smaller trees than `init_depth` allows. Tends to grow asymmetrical trees.
-                - 'full': Functions are chosen until the `init_depth` is reached, and then terminals are selected.
+                - 'full': Functions are chosen until the `max_depth` is reached, and then terminals are selected.
                           Tends to grow 'bushy' trees.
             program (tuple, optional): The prefix notation representation of the program. If None, a new naive
             random tree will be grown.
@@ -255,6 +255,7 @@ class _Program:
         return offspring
 
     def subtree_mutation(self):
+        # TODO restrict offspring from being more than 15% deeper than parent
         """Performs a subtree mutation on the program.
 
         Subtree mutation is the most common form of GP mutation. This method randomly selects a
@@ -374,4 +375,16 @@ def _get_random_subtree(program):
         # Push back the endpoint
         end += 1
 
-    return start, end
+    depth = 0
+    arities = []
+    for node in program[:start]:
+        if isinstance(node, Function):
+            depth += 1
+            arities.append(node.arity)
+        else:
+            arities[-1] -= 1
+            while arities[-1] == 0:
+                arities.pop()
+                depth -= 1
+
+    return start, end, depth

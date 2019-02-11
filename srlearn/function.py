@@ -4,8 +4,8 @@ import numpy as np
 class Function:
 
     def __init__(self, function, name, arity):
-        if not isinstance(function, np.ufunc):
-            raise ValueError('function must be a numpy ufunc.')
+        if not callable(function):
+            raise ValueError('function must be callable')
 
         if not (arity == 1 or arity == 2):
             raise ValueError('arity must be 1 or 2.')
