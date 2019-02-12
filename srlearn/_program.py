@@ -25,7 +25,7 @@ class _Program:
 
     def __init__(self,
                  function_set,
-                 max_depth,
+                 init_depth,
                  const_range,
                  int_consts,
                  num_features,
@@ -35,7 +35,7 @@ class _Program:
 
         Args:
             function_set (list): A list of valid functions to use in the program.
-            max_depth (int): The maximum allowed depth for the tree when the initialization
+            init_depth (int): The maximum allowed initialization depth for the tree when the initialization
             method is 'grow'. When the initialization method is 'full', this will be the height of the tree.
             const_range (tuple of two ints): The range of constants to include in the formulas.
             int_consts (bool): If true, constants will only be integers in const_range.
@@ -48,7 +48,7 @@ class _Program:
             program (tuple, optional): The prefix notation representation of the program. If None, a new naive
             random tree will be grown.
         """
-        if max_depth < 1:
+        if init_depth < 1:
             raise ValueError('max_depth must be at least 1.')
         if not isinstance(const_range, tuple) or len(const_range) != 2:
             raise ValueError('terminal_range must be a 2-tuple.')
@@ -61,7 +61,7 @@ class _Program:
                 raise ValueError('function_set can only contain elements of type `Function`.')
 
         self.function_set = function_set
-        self.max_depth = max_depth
+        self.init_depth = init_depth
         self.const_range = const_range
         self.int_consts = int_consts
         self.num_features = num_features
@@ -108,18 +108,7 @@ class _Program:
 
     def depth(self):
         """Calculates the depth of the program."""
-        terminals = [0]
-        depth = 1
-        for node in self.program:
-            if isinstance(node, Function):
-                terminals.append(node.arity)
-                depth = max(len(terminals), depth)
-            else:
-                terminals[-1] -= 1
-                while terminals[-1] == 0:
-                    terminals.pop()
-                    terminals[-1] -= 1
-        return depth - 1
+        return _depth(self.program)
 
     def generate_random_program(self, max_depth=None):
         """Generates a random program.
@@ -144,7 +133,7 @@ class _Program:
         program = [function]
         terminal_stack = [function.arity]
 
-        max_depth = max_depth or self.max_depth
+        max_depth = max_depth or self.init_depth
 
         while terminal_stack:
             depth = len(terminal_stack)
@@ -234,6 +223,11 @@ class _Program:
         Then, it creates the offspring by replacing the sub-tree rooted at the crossover point in a copy
         of the first parent with a copy of the sub-tree rooted at the crossover point in the second parent.
 
+        This implementation restricts the offspring from being more than 15% deeper than its parent, as proposed by [1].
+
+        [1] K. E. Kinnear, “Evolving a sort: lessons in genetic programming,” in IEEE International Conference on
+        Neural Networks, 1993, pp. 881–888.
+
         Args:
             donor (_Program): The donor program.
 
@@ -243,19 +237,28 @@ class _Program:
         if not isinstance(donor, _Program):
             raise ValueError('donor must be a _Program.')
 
-        # Get a subtree to donate
-        donor_start, donor_end = _get_random_subtree(donor.program)
         # Produce offspring
         offspring = self.clone()
+        offspring_depth = offspring.depth()
+
         # Get a subtree of the offspring to replace
         start, end = _get_random_subtree(offspring.program)
+
+        # Get a subtree to donate
+        offset = offspring_depth - _depth(offspring.program[start:end])
+        donor_start, donor_end = _get_random_subtree(donor.program)
+        donor_program = donor.program[donor_start:donor_end]
+        # If depth is too big, try again
+        while offset + _depth(donor_program) > offspring_depth * 1.15:
+            donor_start, donor_end = _get_random_subtree(donor_program)
+            donor_program = donor_program[donor_start:donor_end]
+
         # Insert genetic material from the donor into the offspring
-        offspring.program = offspring.program[:start] + donor.program[donor_start:donor_end] + offspring.program[end:]
+        offspring.program = offspring.program[:start] + donor_program + offspring.program[end:]
 
         return offspring
 
     def subtree_mutation(self):
-        # TODO restrict offspring from being more than 15% deeper than parent
         """Performs a subtree mutation on the program.
 
         Subtree mutation is the most common form of GP mutation. This method randomly selects a
@@ -338,6 +341,29 @@ class _Program:
         return mutated
 
 
+def _depth(program):
+    """Calculates the depth of a program.
+
+    Args:
+        program (list): The program for which to calculate the depth.
+
+    Returns:
+        The depth of the tree.
+    """
+    terminals = [0]
+    depth = 1
+    for node in program:
+        if isinstance(node, Function):
+            terminals.append(node.arity)
+            depth = max(len(terminals), depth)
+        else:
+            terminals[-1] -= 1
+            while terminals[-1] == 0:
+                terminals.pop()
+                terminals[-1] -= 1
+    return depth - 1
+
+
 def _get_random_subtree(program):
     """Get a random subtree from the program.
 
@@ -356,8 +382,7 @@ def _get_random_subtree(program):
         from.
 
     Returns:
-        The tuple (start, end) representing the indices that mark the subtree. The
-        endpoint is not inclusive.
+        The tuple (start, end) representing the indices that mark the subtree. The endpoint is not inclusive.
     """
     probs = np.array([0.9 if isinstance(node, Function) else 0.1 for node in program])
     probs = np.cumsum(probs / probs.sum())
@@ -375,16 +400,4 @@ def _get_random_subtree(program):
         # Push back the endpoint
         end += 1
 
-    depth = 0
-    arities = []
-    for node in program[:start]:
-        if isinstance(node, Function):
-            depth += 1
-            arities.append(node.arity)
-        else:
-            arities[-1] -= 1
-            while arities[-1] == 0:
-                arities.pop()
-                depth -= 1
-
-    return start, end, depth
+    return start, end
