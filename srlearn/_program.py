@@ -14,7 +14,7 @@ from copy import deepcopy
 
 import numpy as np
 
-from .function import Function
+from .functions import _Function
 
 
 class _Program:
@@ -57,7 +57,7 @@ class _Program:
         if init_method not in ['grow', 'full']:
             raise ValueError('"{}" is not a valid init_method.'.format(init_method))
         for element in function_set:
-            if not isinstance(element, Function):
+            if not isinstance(element, _Function):
                 raise ValueError('function_set can only contain elements of type `Function`.')
 
         self.function_set = function_set
@@ -84,7 +84,7 @@ class _Program:
         output = ''
         terminals = [0]
         for i, node in enumerate(self.program):
-            if isinstance(node, Function):
+            if isinstance(node, _Function):
                 output += node.name + '('
                 terminals.append(node.arity)
             else:
@@ -176,7 +176,7 @@ class _Program:
 
         evaluation_stack = []
         for node in self.program:
-            if isinstance(node, Function):
+            if isinstance(node, _Function):
                 # If node is a function, push a new list onto the evaluation stack
                 evaluation_stack.append([node])
             else:
@@ -304,7 +304,7 @@ class _Program:
 
         for i in indices:
             node = mutated.program[i]
-            if isinstance(node, Function):
+            if isinstance(node, _Function):
                 # If node is a function, replace it with a random function of equal arity
                 # Note that there is a chance the same function is randomly selected as a replacement
                 mutated.program[i] = np.random.choice(mutated.arities[node.arity])
@@ -353,7 +353,7 @@ def _depth(program):
     terminals = [0]
     depth = 1
     for node in program:
-        if isinstance(node, Function):
+        if isinstance(node, _Function):
             terminals.append(node.arity)
             depth = max(len(terminals), depth)
         else:
@@ -384,7 +384,7 @@ def _get_random_subtree(program):
     Returns:
         The tuple (start, end) representing the indices that mark the subtree. The endpoint is not inclusive.
     """
-    probs = np.array([0.9 if isinstance(node, Function) else 0.1 for node in program])
+    probs = np.array([0.9 if isinstance(node, _Function) else 0.1 for node in program])
     probs = np.cumsum(probs / probs.sum())
     start = np.searchsorted(probs, np.random.uniform())
 
@@ -394,7 +394,7 @@ def _get_random_subtree(program):
     # Check if we are encapsulated everything we need to
     while stack > end - start:
         node = program[end]
-        if isinstance(node, Function):
+        if isinstance(node, _Function):
             # If we are at a function, we need to encapsulate its children
             stack += node.arity
         # Push back the endpoint
