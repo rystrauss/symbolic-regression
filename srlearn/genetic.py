@@ -1,3 +1,5 @@
+import numpy as np
+
 from ._program import _Program
 
 
@@ -13,8 +15,9 @@ class SymbolicRegressor:
                  init_method,
                  fitness_function,
                  stopping_threshold,
-                 objective,
+                 standardized_fitness_max,
                  init_depth):
+        # TODO: raise errors
 
         self.population_size = population_size
         self.function_set = function_set
@@ -25,12 +28,10 @@ class SymbolicRegressor:
         self.init_method = init_method
         self.fitness_function = fitness_function
         self.stopping_threshold = stopping_threshold
-        self.objective = objective
+        self.standardized_fitness_max = standardized_fitness_max
         self.init_depth = init_depth
 
         self.best_program = None
-
-        # TODO: deal with errors
 
     def fit(self, X, y):
         # TODO: implement ramped initialization
@@ -38,5 +39,14 @@ class SymbolicRegressor:
                                self.init_method) for _ in range(self.population_size)]
 
         for generation in range(self.max_generations):
-            fitnesses = list(enumerate([self.fitness_function(y, program.predict(X)) for program in population]))
-            fitnesses.sort(key=lambda x: x[1], reverse=self.objective == 'max')
+            raw_fitness = np.array([self.fitness_function(y, program.predict(X)) for program in population])
+
+            if self.standardized_fitness_max:
+                raw_fitness = self.standardized_fitness_max - raw_fitness
+            standardized_fitness = raw_fitness
+
+            adjusted_fitness = 1 / (1 + standardized_fitness)
+            normalized_fitness = adjusted_fitness / adjusted_fitness.sum()
+
+            normalized_fitness = list(enumerate(normalized_fitness))
+            normalized_fitness.sort(key=lambda x: x[1])
