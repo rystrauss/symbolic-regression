@@ -34,7 +34,7 @@ class _Program:
         """Constructor.
 
         Args:
-            function_set (list): A list of valid functions to use in the program.
+            function_set (tuple): A tuple of valid functions to use in the program.
             init_depth (int): The maximum allowed initialization depth for the tree when the initialization
             method is 'grow'. When the initialization method is 'full', this will be the height of the tree.
             const_range (tuple of two ints): The range of constants to include in the formulas.
@@ -110,6 +110,19 @@ class _Program:
         """Calculates the depth of the program."""
         return _depth(self.program)
 
+    def is_valid(self):
+        """Determines whether or not the program contains a valid explicit prefix notation list."""
+        terminals = [0]
+        for node in self.program:
+            if isinstance(node, _Function):
+                terminals.append(node.arity)
+            else:
+                terminals[-1] -= 1
+                while terminals[-1] == 0:
+                    terminals.pop()
+                    terminals[-1] -= 1
+        return terminals == [-1]
+
     def generate_random_program(self, max_depth=None):
         """Generates a random program.
 
@@ -174,6 +187,12 @@ class _Program:
             raise ValueError(
                 'X should have shape (num_examples, {}), but got shape {}.'.format(self.num_features, X.shape))
 
+        if isinstance(self.program[0], np.float):
+            return np.full((X.shape[0],), self.program[0])
+
+        if isinstance(self.program[0], np.int):
+            return X[:, self.program[0]]
+
         evaluation_stack = []
         for node in self.program:
             if isinstance(node, _Function):
@@ -207,6 +226,8 @@ class _Program:
                 else:
                     # In this case, we are done and can return the result
                     return result
+
+        raise RuntimeError('attempting to return prediction of type None')
 
     def clone(self):
         """Clones the program.
@@ -256,6 +277,7 @@ class _Program:
         # Insert genetic material from the donor into the offspring
         offspring.program = offspring.program[:start] + donor_program + offspring.program[end:]
 
+        assert offspring.is_valid()
         return offspring
 
     def subtree_mutation(self):
@@ -276,7 +298,9 @@ class _Program:
         chicken = self.clone()
         chicken.program = self.generate_random_program()
         # Do subtree mutation via the headless chicken method
-        return self.subtree_crossover(chicken)
+        mutated = self.subtree_crossover(chicken)
+        assert mutated.is_valid()
+        return mutated
 
     def point_mutation(self, point_probability):
         """Performs point mutation on the program.
@@ -300,21 +324,23 @@ class _Program:
         mutated = self.clone()
         # Determine which nodes to mutate
         indices = np.where(
-            [True if np.random.rand() < point_probability else False for _ in range(len(mutated.program))])
+            [True if np.random.rand() < point_probability else False for _ in range(len(mutated.program))])[0]
 
-        for i in indices:
-            node = mutated.program[i]
-            if isinstance(node, _Function):
-                # If node is a function, replace it with a random function of equal arity
-                # Note that there is a chance the same function is randomly selected as a replacement
-                mutated.program[i] = np.random.choice(mutated.arities[node.arity])
-            else:
-                # We need to select either a variable or constant
-                terminal = np.random.randint(mutated.num_features + 1)
-                if terminal == mutated.num_features:
-                    terminal = np.random.uniform(*self.const_range)
-                mutated.program[i] = terminal
+        if len(indices) > 0:
+            for i in indices:
+                node = mutated.program[i]
+                if isinstance(node, _Function):
+                    # If node is a function, replace it with a random function of equal arity
+                    # Note that there is a chance the same function is randomly selected as a replacement
+                    mutated.program[i] = np.random.choice(mutated.arities[node.arity])
+                else:
+                    # We need to select either a variable or constant
+                    terminal = np.random.randint(mutated.num_features + 1)
+                    if terminal == mutated.num_features:
+                        terminal = np.random.uniform(*self.const_range)
+                    mutated.program[i] = terminal
 
+        assert mutated.is_valid()
         return mutated
 
     def hoist_mutation(self):
@@ -336,8 +362,10 @@ class _Program:
 
         start, end = _get_random_subtree(mutated.program)
         sub_start, sub_end = _get_random_subtree(mutated.program[start:end])
-        mutated.program = mutated.program[:start] + mutated.program[sub_start:sub_end] + mutated.program[:end]
+        mutated.program = \
+            mutated.program[:start] + mutated.program[start:end][sub_start:sub_end] + mutated.program[end:]
 
+        assert mutated.is_valid()
         return mutated
 
 
