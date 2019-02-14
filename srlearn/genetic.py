@@ -27,7 +27,8 @@ class SymbolicRegressor:
                  mutation_type_probabilities=(0.5, 0.25, 0.25),
                  point_replace_probability=0.05,
                  init_depth=6,
-                 max_depth=17):
+                 max_depth=17,
+                 parsimony_coefficient=0.001):
         """Constructor.
 
         Args:
@@ -49,6 +50,8 @@ class SymbolicRegressor:
             being mutated.
             init_depth (int): The depth at which trees should be initialized.
             max_depth (int): The maximum depth allowed in the population.
+            parsimony_coefficient (float): Coefficient to determine how much parsimony pressure (i.e. regularization)
+            is applied to the fitness during tournaments. A greater value means more pressure.
         """
         if not isinstance(function_set, tuple):
             raise ValueError('function set must be a tuple.')
@@ -77,6 +80,7 @@ class SymbolicRegressor:
         self.point_replace_probability = point_replace_probability
         self.init_depth = init_depth
         self.max_depth = max_depth
+        self.parsimony_coefficient = parsimony_coefficient
 
         self.best_program = None
 
@@ -117,8 +121,6 @@ class SymbolicRegressor:
             },
             'best_raw_fitness': None
         }
-
-        # TODO: implement regularization
 
         # Build the initial population
         if self.init_method == 'ramped':
@@ -182,7 +184,10 @@ class SymbolicRegressor:
                     The index of the winning program.
                 """
                 contestant_indices = np.random.choice(self.population_size, size=self.tournament_size, replace=False)
-                contestants = adjusted_fitness[contestant_indices]
+                # Apply parsimony pressure
+                regularized_fitness = np.array([f - self.parsimony_coefficient * len(population[i]) for i, f in
+                                                enumerate(adjusted_fitness)])
+                contestants = regularized_fitness[contestant_indices]
                 return contestant_indices[np.argmax(contestants)]
 
             # Initialize the new population
@@ -255,3 +260,17 @@ class SymbolicRegressor:
             raise ValueError('X should be two dimensional')
 
         return self.best_program.predict(X)
+
+    def score(self, X, y):
+        if self.best_program is None:
+            raise RuntimeError('regressor has not yet been fitted.')
+        if not isinstance(X, np.ndarray):
+            raise ValueError('X must be a numpy array.')
+        if X.ndim == 1:
+            X = X.reshape((-1, 1))
+        if X.ndim != 2:
+            raise ValueError('X should be two dimensional')
+        if not isinstance(y, np.ndarray):
+            raise ValueError('y must be a numpy array.')
+
+        return self.fitness_function(y, self.predict(X))
