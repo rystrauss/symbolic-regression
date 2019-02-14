@@ -54,7 +54,7 @@ class _Program:
             raise ValueError('terminal_range must be a 2-tuple.')
         if num_features < 1:
             raise ValueError('num_features must be at least 1.')
-        if init_method not in ['grow', 'full']:
+        if init_method not in ['grow', 'full', 'ramped']:
             raise ValueError('"{}" is not a valid init_method.'.format(init_method))
         for element in function_set:
             if not isinstance(element, _Function):
@@ -147,13 +147,16 @@ class _Program:
         terminal_stack = [function.arity]
 
         max_depth = max_depth or self.init_depth
+        init_method = self.init_method
+        if init_method == 'ramped':
+            init_method = np.random.choice(['full', 'grow'])
 
         while terminal_stack:
             depth = len(terminal_stack)
             # We consider `rand` to be a single terminal, so the size of our terminal set
             # is the number of features plus one
             terminal_prob = (self.num_features + 1) / (len(self.function_set) + self.num_features + 1)
-            if depth == max_depth or (self.init_method == 'grow' and np.random.rand() <= terminal_prob):
+            if depth == max_depth or (init_method == 'grow' and np.random.rand() <= terminal_prob):
                 # We need a terminal
                 terminal = np.random.randint(self.num_features + 1)
                 # Potentially select a constant as the terminal

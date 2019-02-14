@@ -19,7 +19,7 @@ class SymbolicRegressor:
                  const_range=(-5, 5),
                  int_consts=True,
                  tournament_size=5,
-                 init_method='grow',
+                 init_method='ramped',
                  fitness_function=mean_squared_error,
                  crossover_probability=0.9,
                  mutation_probability=0.05,
@@ -102,15 +102,42 @@ class SymbolicRegressor:
         if X.ndim != 2:
             raise ValueError('X should be two dimensional')
 
-        history = []
-        best_fitness = 0
+        history = {
+            'raw_fitness': {
+                'best': [],
+                'average': []
+            },
+            'standardized_fitness': {
+                'best': [],
+                'average': []
+            },
+            'adjusted_fitness': {
+                'best': [],
+                'average': []
+            },
+            'best_raw_fitness': None
+        }
 
-        # TODO: implement ramped initialization
         # TODO: implement regularization
 
         # Build the initial population
-        population = [_Program(self.function_set, self.init_depth, self.const_range, self.int_consts, X.shape[1],
-                               self.init_method) for _ in range(self.population_size)]
+        if self.init_method == 'ramped':
+            population = []
+            for depth in range(2, self.init_depth + 1, 2):
+                population.extend(
+                    [_Program(self.function_set, depth, self.const_range, self.int_consts, X.shape[1], self.init_method)
+                     for _ in range(self.population_size // (self.init_depth // 2))])
+            if len(population) < self.population_size:
+                population.extend(
+                    [_Program(self.function_set, self.init_depth, self.const_range, self.int_consts,
+                              X.shape[1], self.init_method) for _ in range(self.population_size - len(population))])
+        else:
+            population = [_Program(self.function_set, self.init_depth, self.const_range, self.int_consts, X.shape[1],
+                                   self.init_method) for _ in range(self.population_size)]
+
+        assert len(population) == self.population_size
+
+        best_adjusted_fitness = 0
 
         for generation in range(max_generations):
             for program in population:
@@ -132,16 +159,17 @@ class SymbolicRegressor:
             assert isinstance(best_index, np.int64)
 
             # Save fitness metrics to history
-            history.append({
-                'raw_fitness': {
-                    'best': raw_fitness[best_index],
-                    'average': np.mean(raw_fitness)
-                }
-            })
+            history['raw_fitness']['best'].append(raw_fitness[best_index])
+            history['raw_fitness']['average'].append(raw_fitness.mean())
+            history['standardized_fitness']['best'].append(standardized_fitness[best_index])
+            history['standardized_fitness']['average'].append(standardized_fitness.mean())
+            history['adjusted_fitness']['best'].append(adjusted_fitness[best_index])
+            history['adjusted_fitness']['average'].append(adjusted_fitness.mean())
 
-            # Update the overall best program is necessary
-            if adjusted_fitness[best_index] > best_fitness:
+            # Update the overall best program if necessary
+            if adjusted_fitness[best_index] > best_adjusted_fitness:
                 self.best_program = population[best_index]
+                history['best_raw_fitness'] = raw_fitness[best_index]
 
             # Check termination criterion
             if adjusted_fitness[best_index] > 1 - stopping_threshold:
