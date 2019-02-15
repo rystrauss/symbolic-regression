@@ -10,6 +10,8 @@ numpy = "*"
 pandas = "*"
 matplotlib = "*"
 jupyter = "*"
+scikit-learn = "*"
+click = "*"
 
 [requires]
 python_version = "3.7"

@@ -4,3 +4,4 @@
 Pipfile.lock
 data/
 *.ipynb_checkpoints
+experiments/
