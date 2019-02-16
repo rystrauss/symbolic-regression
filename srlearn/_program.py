@@ -30,6 +30,7 @@ class _Program:
                  int_consts,
                  num_features,
                  init_method,
+                 random_state,
                  program=None):
         """Constructor.
 
@@ -66,6 +67,7 @@ class _Program:
         self.int_consts = int_consts
         self.num_features = num_features
         self.init_method = init_method
+        self.random_state = random_state
         self.program = program or self.generate_random_program()
 
         if not isinstance(self.program, list):
@@ -142,26 +144,26 @@ class _Program:
             The explicit prefix notation representation of the generated tree as a list.
         """
         # Start program with a function
-        function = np.random.choice(self.function_set)
+        function = self.random_state.choice(self.function_set)
         program = [function]
         terminal_stack = [function.arity]
 
         max_depth = max_depth or self.init_depth
         init_method = self.init_method
         if init_method == 'ramped':
-            init_method = np.random.choice(['full', 'grow'])
+            init_method = self.random_state.choice(['full', 'grow'])
 
         while terminal_stack:
             depth = len(terminal_stack)
             # We consider `rand` to be a single terminal, so the size of our terminal set
             # is the number of features plus one
             terminal_prob = (self.num_features + 1) / (len(self.function_set) + self.num_features + 1)
-            if depth == max_depth or (init_method == 'grow' and np.random.rand() <= terminal_prob):
+            if depth == max_depth or (init_method == 'grow' and self.random_state.rand() <= terminal_prob):
                 # We need a terminal
-                terminal = np.random.randint(self.num_features + 1)
+                terminal = self.random_state.randint(self.num_features + 1)
                 # Potentially select a constant as the terminal
                 if terminal == self.num_features:
-                    terminal = np.random.uniform(*self.const_range)
+                    terminal = self.random_state.uniform(*self.const_range)
                     if self.int_consts:
                         terminal = np.round(terminal)
                 program.append(terminal)
@@ -173,7 +175,7 @@ class _Program:
                     terminal_stack[-1] -= 1
             else:
                 # We need a function
-                function = np.random.choice(self.function_set)
+                function = self.random_state.choice(self.function_set)
                 program.append(function)
                 terminal_stack.append(function.arity)
 
@@ -266,15 +268,15 @@ class _Program:
         offspring_depth = offspring.depth()
 
         # Get a subtree of the offspring to replace
-        start, end = _get_random_subtree(offspring.program)
+        start, end = self._get_random_subtree(offspring.program)
 
         # Get a subtree to donate
         offset = offspring_depth - _depth(offspring.program[start:end])
-        donor_start, donor_end = _get_random_subtree(donor.program)
+        donor_start, donor_end = self._get_random_subtree(donor.program)
         donor_program = donor.program[donor_start:donor_end]
         # If depth is too big, try again
         while offset + _depth(donor_program) > offspring_depth * 1.15:
-            donor_start, donor_end = _get_random_subtree(donor_program)
+            donor_start, donor_end = self._get_random_subtree(donor_program)
             donor_program = donor_program[donor_start:donor_end]
 
         # Insert genetic material from the donor into the offspring
@@ -327,7 +329,7 @@ class _Program:
         mutated = self.clone()
         # Determine which nodes to mutate
         indices = np.where(
-            [True if np.random.rand() < point_probability else False for _ in range(len(mutated.program))])[0]
+            [True if self.random_state.rand() < point_probability else False for _ in range(len(mutated.program))])[0]
 
         if len(indices) > 0:
             for i in indices:
@@ -335,12 +337,12 @@ class _Program:
                 if isinstance(node, _Function):
                     # If node is a function, replace it with a random function of equal arity
                     # Note that there is a chance the same function is randomly selected as a replacement
-                    mutated.program[i] = np.random.choice(mutated.arities[node.arity])
+                    mutated.program[i] = self.random_state.choice(mutated.arities[node.arity])
                 else:
                     # We need to select either a variable or constant
-                    terminal = np.random.randint(mutated.num_features + 1)
+                    terminal = self.random_state.randint(mutated.num_features + 1)
                     if terminal == mutated.num_features:
-                        terminal = np.random.uniform(*self.const_range)
+                        terminal = self.random_state.uniform(*self.const_range)
                     mutated.program[i] = terminal
 
         assert mutated.is_valid()
@@ -363,13 +365,51 @@ class _Program:
         """
         mutated = self.clone()
 
-        start, end = _get_random_subtree(mutated.program)
-        sub_start, sub_end = _get_random_subtree(mutated.program[start:end])
+        start, end = self._get_random_subtree(mutated.program)
+        sub_start, sub_end = self._get_random_subtree(mutated.program[start:end])
         mutated.program = \
             mutated.program[:start] + mutated.program[start:end][sub_start:sub_end] + mutated.program[end:]
 
         assert mutated.is_valid()
         return mutated
+
+    def _get_random_subtree(self, program):
+        """Get a random subtree from the program.
+
+        This method uses a technique suggested by Koza, where there is a 90%
+        chance of a function getting selected and a 10% change of a terminal getting
+        selected. On the other hand, if uniform selection of crossover points was used,
+        crossover operations would frequently exchange only very small amounts of genetic
+        material (that is, small subtrees); many crossovers may in fact reduce to simply
+        swapping two leaves.
+
+        W. B. Langdon, R. Poli, N. F. McPhee, and J. R. Koza, “Genetic programming: An introduction and
+        tutorial, with a survey of techniques and applications,” Stud. Comput. Intell., vol. 115, pp. 927–1028, 2008.
+
+        Args:
+            program (list): The explicit list representation of the program to get a subtree
+            from.
+
+        Returns:
+            The tuple (start, end) representing the indices that mark the subtree. The endpoint is not inclusive.
+        """
+        probs = np.array([0.9 if isinstance(node, _Function) else 0.1 for node in program])
+        probs = np.cumsum(probs / probs.sum())
+        start = np.searchsorted(probs, self.random_state.uniform())
+
+        # Keep track of the number of arguments we need to encapsulate
+        stack = 1
+        end = start
+        # Check if we are encapsulated everything we need to
+        while stack > end - start:
+            node = program[end]
+            if isinstance(node, _Function):
+                # If we are at a function, we need to encapsulate its children
+                stack += node.arity
+            # Push back the endpoint
+            end += 1
+
+        return start, end
 
 
 def _depth(program):
@@ -393,42 +433,3 @@ def _depth(program):
                 terminals.pop()
                 terminals[-1] -= 1
     return depth - 1
-
-
-def _get_random_subtree(program):
-    """Get a random subtree from the program.
-
-    This method uses a technique suggested by Koza, where there is a 90%
-    chance of a function getting selected and a 10% change of a terminal getting
-    selected. On the other hand, if uniform selection of crossover points was used,
-    crossover operations would frequently exchange only very small amounts of genetic
-    material (that is, small subtrees); many crossovers may in fact reduce to simply
-    swapping two leaves.
-
-    W. B. Langdon, R. Poli, N. F. McPhee, and J. R. Koza, “Genetic programming: An introduction and
-    tutorial, with a survey of techniques and applications,” Stud. Comput. Intell., vol. 115, pp. 927–1028, 2008.
-
-    Args:
-        program (list): The explicit list representation of the program to get a subtree
-        from.
-
-    Returns:
-        The tuple (start, end) representing the indices that mark the subtree. The endpoint is not inclusive.
-    """
-    probs = np.array([0.9 if isinstance(node, _Function) else 0.1 for node in program])
-    probs = np.cumsum(probs / probs.sum())
-    start = np.searchsorted(probs, np.random.uniform())
-
-    # Keep track of the number of arguments we need to encapsulate
-    stack = 1
-    end = start
-    # Check if we are encapsulated everything we need to
-    while stack > end - start:
-        node = program[end]
-        if isinstance(node, _Function):
-            # If we are at a function, we need to encapsulate its children
-            stack += node.arity
-        # Push back the endpoint
-        end += 1
-
-    return start, end

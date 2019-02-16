@@ -28,7 +28,8 @@ class SymbolicRegressor:
                  point_replace_probability=0.05,
                  init_depth=6,
                  max_depth=17,
-                 parsimony_coefficient=0.001):
+                 parsimony_coefficient=0.001,
+                 random_state=None):
         """Constructor.
 
         Args:
@@ -81,6 +82,7 @@ class SymbolicRegressor:
         self.init_depth = init_depth
         self.max_depth = max_depth
         self.parsimony_coefficient = parsimony_coefficient
+        self.random_state = random_state or np.random.RandomState()
 
         self.best_program = None
 
@@ -119,23 +121,25 @@ class SymbolicRegressor:
                 'best': [],
                 'average': []
             },
+            'diversity': [],
             'best_raw_fitness': None
         }
 
         # Build the initial population
         if self.init_method == 'ramped':
             population = []
-            for depth in range(2, self.init_depth + 1, 2):
+            for depth in range(2, self.init_depth + 1):
                 population.extend(
-                    [_Program(self.function_set, depth, self.const_range, self.int_consts, X.shape[1], self.init_method)
-                     for _ in range(self.population_size // (self.init_depth // 2))])
+                    [_Program(self.function_set, depth, self.const_range, self.int_consts, X.shape[1], self.init_method,
+                              self.random_state) for _ in range(self.population_size // self.init_depth)])
             if len(population) < self.population_size:
                 population.extend(
                     [_Program(self.function_set, self.init_depth, self.const_range, self.int_consts,
-                              X.shape[1], self.init_method) for _ in range(self.population_size - len(population))])
+                              X.shape[1], self.init_method, self.random_state) for _ in
+                     range(self.population_size - len(population))])
         else:
             population = [_Program(self.function_set, self.init_depth, self.const_range, self.int_consts, X.shape[1],
-                                   self.init_method) for _ in range(self.population_size)]
+                                   self.init_method, self.random_state) for _ in range(self.population_size)]
 
         assert len(population) == self.population_size
 
@@ -167,6 +171,7 @@ class SymbolicRegressor:
             history['standardized_fitness']['average'].append(standardized_fitness.mean())
             history['adjusted_fitness']['best'].append(adjusted_fitness[best_index])
             history['adjusted_fitness']['average'].append(adjusted_fitness.mean())
+            history['diversity'].append(_diversity(population))
 
             # Update the overall best program if necessary
             if adjusted_fitness[best_index] > best_adjusted_fitness:
@@ -183,7 +188,8 @@ class SymbolicRegressor:
                 Returns:
                     The index of the winning program.
                 """
-                contestant_indices = np.random.choice(self.population_size, size=self.tournament_size, replace=False)
+                contestant_indices = self.random_state.choice(self.population_size, size=self.tournament_size,
+                                                              replace=False)
                 # Apply parsimony pressure
                 regularized_fitness = np.array([f - self.parsimony_coefficient * len(population[i]) for i, f in
                                                 enumerate(adjusted_fitness)])
@@ -195,12 +201,12 @@ class SymbolicRegressor:
             # Loop until the new population has been filled
             while len(new_population) < self.population_size:
                 # Randomly determine which operation is going to happen
-                operation_probability = np.random.rand()
+                operation_probability = self.random_state.rand()
 
                 # Mutation
                 if operation_probability < self.mutation_probability:
                     winner = population[tournament()]
-                    mutation_method = np.random.rand()
+                    mutation_method = self.random_state.rand()
                     # Hoist mutation
                     if mutation_method < self.mutation_type_probabilities[0]:
                         new_population.append(winner.hoist_mutation())
@@ -274,3 +280,17 @@ class SymbolicRegressor:
             raise ValueError('y must be a numpy array.')
 
         return self.fitness_function(y, self.predict(X))
+
+
+def _diversity(population):
+    """Calculates the diversity of a population.
+
+    Args:
+        population (list): The population to evaluate.
+
+    Returns:
+        The percentage of individuals for which no exact duplicate exists elsewhere in the population.
+    """
+    population = [str(p) for p in population]
+    frequencies = [population.count(p) for p in set(population)]
+    return frequencies.count(1) / len(population)

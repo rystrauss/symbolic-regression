@@ -15,7 +15,8 @@ class _Fitness:
         Args:
             function (callable): A fitness function that has the arguments (y_true, y_pred).
             maximize (bool): True iff the fitness function should be maximized.
-            max_value (int): If maximize is True, this is the maximal (best) value that the fitness function can return.
+            max_value (int, None): If maximize is True, this is the maximal (best) value that the
+            fitness function can return.
         """
         self.function = function
         self.maximize = maximize
@@ -73,5 +74,3 @@ def _r_squared(y_true, y_pred):
 mean_squared_error = _Fitness(_mean_squared_error, False, None)
 mean_absolute_error = _Fitness(_mean_absolute_error, False, None)
 r_squared = _Fitness(_r_squared, True, 1)
-
-__all__ = [mean_squared_error, mean_absolute_error, r_squared]
