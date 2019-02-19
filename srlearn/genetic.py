@@ -268,6 +268,15 @@ class SymbolicRegressor:
         return self.best_program.predict(X)
 
     def score(self, X, y):
+        """Score the model on some data.
+
+        Args:
+            X (ndarray): A numpy array of the form (num_samples, num_features).
+            y (ndarray): A numpy array of the form (num_samples,) containing the true y values.
+
+        Returns:
+            Result of evaluation the fitness function on the predictions returned by the model's best program.
+        """
         if self.best_program is None:
             raise RuntimeError('regressor has not yet been fitted.')
         if not isinstance(X, np.ndarray):

@@ -86,16 +86,21 @@ class _Program:
         output = ''
         terminals = [0]
         for i, node in enumerate(self.program):
+            # Check to see if node is a function
             if isinstance(node, _Function):
                 output += node.name + '('
+                # If so, we need to keep track of its required arguments
                 terminals.append(node.arity)
             else:
+                # If node is a terminal, we can just print the terminal
                 if isinstance(node, np.int):
                     output += 'X{}'.format(node)
                 else:
                     output += '{0:.3f}'.format(node)
+                # Mark the terminal as used
                 terminals[-1] -= 1
                 while terminals[-1] == 0:
+                    # Pop off any completed functions and add closing parenthesis
                     terminals.pop()
                     terminals[-1] -= 1
                     output += ')'
@@ -117,12 +122,15 @@ class _Program:
         terminals = [0]
         for node in self.program:
             if isinstance(node, _Function):
+                # If node is a function, add its arity to the stack
                 terminals.append(node.arity)
             else:
+                # Otherwise, we have consumed an argument
                 terminals[-1] -= 1
                 while terminals[-1] == 0:
                     terminals.pop()
                     terminals[-1] -= 1
+        # In the end, we should have nothing left in the stack
         return terminals == [-1]
 
     def generate_random_program(self, max_depth=None):
